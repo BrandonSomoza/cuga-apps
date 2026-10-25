@@ -83,4 +83,5 @@ APP_PORTS: dict[str, int] = {
     "repo_explainer":             28837,
     "trivia_quiz":                28831,
     "fact_checker":               28832,
+    "crypto_101":                 28840,
 }
