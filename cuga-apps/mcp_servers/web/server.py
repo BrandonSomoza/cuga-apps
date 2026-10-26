@@ -312,8 +312,6 @@ def get_github_repo(repo: str) -> str:
         return tool_error("repo must look like 'owner/name'.", code="bad_input")
     try:
         r = get_json(f"https://api.github.com/repos/{repo}")
-        q = f'repo:{repo} label:"good first issue" is:issue is:open'
-        gfi = get_json("https://api.github.com/search/issues", params={"q": q, "per_page": 1})
     except Exception as exc:
         status = getattr(getattr(exc, "response", None), "status_code", None)
         if status == 404:
@@ -321,6 +319,15 @@ def get_github_repo(repo: str) -> str:
         if status in (403, 429):
             return tool_error("GitHub rate limit hit; try again later.", code="rate_limit")
         return tool_error(f"GitHub API failed: {exc}", code="upstream")
+    # Search by the canonical name: the repos API follows renames
+    # (facebook/react → react/react) but search 422s on the old name. The
+    # count is a nice-to-have, so a search failure (e.g. its stricter
+    # 10/minute limit) leaves it null rather than failing the whole call.
+    q = f'repo:{r.get("full_name") or repo} label:"good first issue" is:issue is:open'
+    try:
+        gfi = get_json("https://api.github.com/search/issues", params={"q": q, "per_page": 1})
+    except Exception:
+        gfi = {}
     return tool_result({
         "repo":              r.get("full_name"),
         "description":       r.get("description"),
