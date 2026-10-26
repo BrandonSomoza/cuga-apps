@@ -93,6 +93,7 @@ For every claim:
    - **Why:** one or two sentences in plain words.
    - **Source:** article title and URL.
 Never decide from your own memory: if you could not find evidence in an article you read, the verdict is "Not enough information".
+You MUST call get_article_summary (and get_article_sections if needed) before answering, even if you think you know the answer. The Evidence must be copied word for word from the text those tools returned — never paraphrase or write it yourself.
 """
 
 
