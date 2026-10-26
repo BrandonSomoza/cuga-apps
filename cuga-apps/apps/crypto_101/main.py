@@ -22,6 +22,7 @@ Optional env vars (provider-specific):
 import argparse
 import logging
 import os
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -70,9 +71,85 @@ from ui import _HTML
 # ---------------------------------------------------------------------------
 
 def _make_tools():
-    # Delegated to MCP server(s): web.
+    # Delegated to MCP server(s): finance, knowledge.
     from _mcp_bridge import load_tools
     return load_tools(["finance", "knowledge"])
+
+
+# ---------------------------------------------------------------------------
+# Live prices — fetched by the app, not left to the agent
+# ---------------------------------------------------------------------------
+# The agent sometimes skips get_crypto_price and writes {{btc_price}}-style
+# placeholders that CUGA can't fill (no variable was ever set), so raw braces
+# reached the UI. For coins we can recognise, fetch the price up front and
+# hand the numbers to the agent with the question.
+
+# Keyword (lowercase) → ticker accepted by the finance server's get_crypto_price.
+_COINS = {
+    "bitcoin": "btc", "btc": "btc",
+    "ethereum": "eth", "ether": "eth", "eth": "eth",
+    "solana": "sol", "sol": "sol",
+    "cardano": "ada", "ada": "ada",
+    "dogecoin": "doge", "doge": "doge",
+    "polkadot": "dot",
+    "avalanche": "avax", "avax": "avax",
+    "chainlink": "link",
+    "polygon": "matic", "matic": "matic",
+    "ripple": "xrp", "xrp": "xrp",
+}
+
+
+def _coins_in(question: str) -> list[str]:
+    words = re.findall(r"[a-z]+", question.lower())
+    found: list[str] = []
+    for w in words:
+        t = _COINS.get(w)
+        if t and t not in found:
+            found.append(t)
+    return found
+
+
+# CoinGecko's free tier rate-limits the shared finance server, so reuse a
+# price for a minute instead of fetching it again for every question.
+_PRICE_TTL = 60.0
+_price_cache: dict[str, tuple[float, dict]] = {}
+
+
+async def _price(ticker: str) -> dict:
+    import asyncio
+    import time
+    from _mcp_bridge import call_tool
+
+    hit = _price_cache.get(ticker)
+    if hit and time.monotonic() - hit[0] < _PRICE_TTL:
+        return hit[1]
+    d = await asyncio.to_thread(call_tool, "finance", "get_crypto_price", {"symbol": ticker})
+    _price_cache[ticker] = (time.monotonic(), d)
+    return d
+
+
+async def _live_prices(question: str) -> str:
+    """Return a 'Live prices' block for the coins named in the question, or ''."""
+    lines = []
+    for ticker in _coins_in(question):
+        try:
+            d = await _price(ticker)
+            lines.append(f"- {ticker.upper()}: ${d['price']:,} USD, 24h change {d['change_24h']:+.2f}%")
+        except Exception as exc:  # noqa: BLE001 — a missing price must not break the answer
+            log.warning("Price prefetch failed for %s: %s", ticker, exc)
+            lines.append(f"- {ticker.upper()}: price lookup failed")
+    if not lines:
+        return ""
+    return ("\n\nLive prices fetched just now with get_crypto_price "
+            "(use these exact numbers; do not call it again for these coins):\n" + "\n".join(lines))
+
+
+_PLACEHOLDER = re.compile(r"\$?\{\{[^{}]*\}\}")
+
+
+def _strip_placeholders(answer: str) -> str:
+    """Safety net: never show unfilled {{variable}} placeholders to the user."""
+    return _PLACEHOLDER.sub("(price unavailable)", answer)
 
 
 # ---------------------------------------------------------------------------
@@ -154,12 +231,21 @@ def _web(port: int):
         thread_id = str(uuid.uuid4())
         try:
             agent = _get_agent()
-            result = await agent.invoke(req.question, thread_id=thread_id)
-            # Return the agent's synthesised answer, NOT str(result): the
-            # result object's repr dumps the CUGA plan + generated Python code,
-            # which is what was leaking into the UI as an unformatted code blob.
-            answer = result.answer if hasattr(result, "answer") else str(result)
-            return {"answer": answer}
+            question = req.question + await _live_prices(req.question)
+            for attempt in range(2):
+                result = await agent.invoke(question, thread_id=thread_id)
+                # Return the agent's synthesised answer, NOT str(result): the
+                # result object's repr dumps the CUGA plan + generated Python code,
+                # which is what was leaking into the UI as an unformatted code blob.
+                answer = result.answer if hasattr(result, "answer") else str(result)
+                # Every real answer ends with the disclaimer; without it the agent
+                # returned its next step ("Search Wikipedia for …") instead of an
+                # answer. Retry once on a fresh thread.
+                if "not financial advice" in answer.lower():
+                    break
+                log.warning("Agent returned a plan instead of an answer; retrying")
+                thread_id = str(uuid.uuid4())
+            return {"answer": _strip_placeholders(answer)}
         except Exception as exc:
             log.exception("Agent invocation failed")
             return JSONResponse(status_code=500, content={"answer": f"Error: {exc}"})
