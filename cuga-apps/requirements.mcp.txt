@@ -2,7 +2,7 @@
 # Kept separate from requirements.apps.txt so the MCP image stays lean.
 
 # ── MCP framework (FastMCP provides both the server and client helpers) ──
-mcp>=1.0
+mcp>=1.0,<2
 httpx
 pydantic
 

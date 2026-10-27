@@ -8,7 +8,7 @@
 # Keeping those out drops several GB from the image.
 
 # ── MCP framework (server + client helpers) ──────────────────────────────
-mcp>=1.0
+mcp>=1.0,<2
 httpx
 pydantic
 
