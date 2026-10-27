@@ -175,25 +175,43 @@ class _Limiter:
         return None
 
     async def handle(self, request, call_next):
+        # Only the limiter's own checks are allowed to fail open. call_next
+        # stays outside this try: an exception raised by the app itself must
+        # propagate, or the except would run the endpoint a second time.
+        try:
+            denied, acquired = await self._gate(request)
+        except Exception:  # noqa: BLE001 — limiter must never break the app
+            denied, acquired = None, False
+        if denied is not None:
+            return denied
+        if acquired:
+            try:
+                return await call_next(request)
+            finally:
+                self._sem.release()
+        return await call_next(request)
+
+    async def _gate(self, request):
+        """Run layers 1–5. Returns (deny_response_or_None, semaphore_acquired)."""
         cfg = self.cfg
         path = request.url.path
         if (request.method not in cfg.methods
                 or any(path.startswith(p) for p in cfg.exempt)):
-            return await call_next(request)
+            return None, False
 
         # 1. Body-size cap (cheap, header-only).
         if cfg.max_body > 0:
             cl = request.headers.get("content-length")
             if cl and cl.isdigit() and int(cl) > cfg.max_body:
                 return self._deny(413, "Your request is too large. "
-                                  "Please shorten your message.", None)
+                                  "Please shorten your message.", None), False
 
         # 2–4. Per-IP + global counters (under lock).
         ip = _client_ip(request, cfg.trust_forwarded)
         with self._lock:
             denied = self._check_counters(ip)
         if denied is not None:
-            return denied
+            return denied, False
 
         # 5. Concurrency gate.
         if cfg.concurrency > 0:
@@ -204,13 +222,10 @@ class _Limiter:
                 await asyncio.wait_for(self._sem.acquire(), timeout=0.01)
             except asyncio.TimeoutError:
                 return self._deny(429, "This app is handling several requests "
-                                  "right now. Please retry in a few seconds.", 5)
-            try:
-                return await call_next(request)
-            finally:
-                self._sem.release()
+                                  "right now. Please retry in a few seconds.", 5), False
+            return None, True
 
-        return await call_next(request)
+        return None, False
 
 
 def install_rate_limit(app, **overrides) -> None:
@@ -229,10 +244,10 @@ def install_rate_limit(app, **overrides) -> None:
 
     @app.middleware("http")
     async def _rate_limit_mw(request, call_next):
-        try:
-            return await limiter.handle(request, call_next)
-        except Exception:  # noqa: BLE001 — limiter must never break the app
-            return await call_next(request)
+        # handle() fails open around its own checks and calls call_next
+        # exactly once; catching here would re-run the endpoint whenever
+        # the app raised, since its exception surfaces through call_next.
+        return await limiter.handle(request, call_next)
 
     app.state._rate_limit_installed = True
 
