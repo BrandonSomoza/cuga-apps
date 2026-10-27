@@ -55,6 +55,7 @@ APP_PORTS: dict[str, int] = {
     "hiking_research":    28805,
     "movie_recommender":  28806,
     "webpage_summarizer": 28071,
+    "hacker_news_digest": 28839,
     "code_reviewer":      28807,
     "paper_scout":        28808,
     "wiki_dive":          28809,
