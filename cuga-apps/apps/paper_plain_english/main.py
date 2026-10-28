@@ -101,8 +101,20 @@ Explain only what the abstract and metadata say. Don't claim results that aren't
 # ---------------------------------------------------------------------------
 
 def make_agent():
+    import inspect
     from cuga.sdk import CugaAgent
     from _llm import create_llm
+
+    # Force native tool calls (function_calling) instead of codeact.
+    # gpt-oss:20b's hard-coded runtime profile leaves execution_mode at its
+    # default ("codeact"), causing the model to emit Python code
+    # (e.g. `await get_arxiv_paper(...)`) that Ollama then rejects as
+    # invalid JSON, producing HTTP 500 "error parsing tool call" errors.
+    # Released cuga (0.4.x) has no execution_mode argument and raises
+    # TypeError on it, so only pass it when this cuga accepts it.
+    extra = {}
+    if "execution_mode" in inspect.signature(CugaAgent.__init__).parameters:
+        extra["execution_mode"] = "function_calling"
 
     return CugaAgent(
         model=create_llm(
@@ -117,12 +129,7 @@ def make_agent():
         # the shared .cuga folder.
         enable_knowledge=False,
         auto_load_policies=False,
-        # Force native tool calls (function_calling) instead of codeact.
-        # gpt-oss:20b's hard-coded runtime profile leaves execution_mode at its
-        # default ("codeact"), causing the model to emit Python code
-        # (e.g. `await get_arxiv_paper(...)`) that Ollama then rejects as
-        # invalid JSON, producing HTTP 500 "error parsing tool call" errors.
-        execution_mode="function_calling",
+        **extra,
     )
 
 
