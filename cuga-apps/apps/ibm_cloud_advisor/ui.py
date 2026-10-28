@@ -126,6 +126,14 @@ _APP_CSS = """<style>
     border-left: 3px solid var(--cds-interactive); padding-left: var(--cds-sp-04);
     margin: var(--cds-sp-03) 0; color: var(--cds-text-secondary); font-size: 0.875rem;
   }
+  .md table { width: 100%; border-collapse: collapse; margin: var(--cds-sp-04) 0; font-size: 0.75rem; }
+  .md th {
+    background: var(--cds-layer-accent); color: var(--cds-text-primary);
+    padding: var(--cds-sp-03) var(--cds-sp-04); text-align: left;
+    border: 1px solid var(--cds-border-subtle); font-weight: 600;
+  }
+  .md td { padding: var(--cds-sp-03) var(--cds-sp-04); border: 1px solid var(--cds-border-subtle); color: var(--cds-text-secondary); }
+  .md tr:nth-child(even) td { background: var(--cds-layer-01); }
 </style>"""
 
 _BODY = r"""
@@ -223,6 +231,20 @@ function mdToHtml(text) {
   t = t.replace(/^---+$/gm, '<hr>');
   // blockquote
   t = t.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
+  // tables (basic)
+  t = t.replace(/((?:^\|.+\|\n?)+)/gm, block => {
+    const rows = block.trim().split('\n').filter(r=>r.trim() && !r.match(/^\|[-| :]+\|$/));
+    if(!rows.length) return block;
+    const [hdr, ...body] = rows;
+    const th = hdr.split('|').filter((_,i,a)=>i>0&&i<a.length-1)
+                  .map(c=>`<th>${c.trim()}</th>`).join('');
+    const trs = body.map(r=>{
+      const tds = r.split('|').filter((_,i,a)=>i>0&&i<a.length-1)
+                    .map(c=>`<td>${c.trim()}</td>`).join('');
+      return `<tr>${tds}</tr>`;
+    }).join('');
+    return `<table><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table>`;
+  });
   // lists — collect consecutive bullet lines
   t = t.replace(/((?:^[ \t]*[-*] .+\n?)+)/gm, block => {
     const items = block.trim().split('\n').map(l=>
@@ -234,7 +256,7 @@ function mdToHtml(text) {
   t = t.split(/\n{2,}/).map(chunk=>{
     chunk = chunk.trim();
     if(!chunk) return '';
-    if(/^<(h[1-6]|ul|ol|pre|hr|blockquote)/.test(chunk)) return chunk;
+    if(/^<(h[1-6]|ul|ol|pre|hr|table|blockquote)/.test(chunk)) return chunk;
     return `<p>${chunk.replace(/\n/g,' ')}</p>`;
   }).join('\n');
   return t;
