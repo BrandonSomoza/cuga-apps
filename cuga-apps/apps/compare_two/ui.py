@@ -296,6 +296,11 @@ _APP_CSS = """<style>
     transition: color var(--cds-dur-fast) var(--cds-ease-productive);
   }
   .history-time { font-size: 0.6875rem; color: var(--cds-text-helper); flex-shrink: 0; font-family: var(--cds-font-mono); }
+
+  /* Markdown tables rendered by mdToHtml() */
+  .md-table { border-collapse: collapse; margin: var(--cds-sp-03) 0; font-size: 0.8125rem; max-width: 100%; display: block; overflow-x: auto; }
+  .md-table th, .md-table td { border: 1px solid var(--cds-border-subtle); padding: var(--cds-sp-02) var(--cds-sp-03); text-align: left; vertical-align: top; }
+  .md-table th { background: var(--cds-layer-accent); font-weight: 600; }
 </style>"""
 
 _BODY = r"""
@@ -477,7 +482,7 @@ _BODY = r"""
   // returns a structured markdown summary; render it instead of dumping the
   // raw text so headings, bullets, bold and links display properly.
   function mdToHtml(text) {
-    return escHtml(String(text == null ? '' : text))
+    return mdTables(escHtml(String(text == null ? '' : text))
       .replace(/```[\s\S]*?```/g, m =>
         '<pre style="white-space:pre-wrap;background:var(--cds-layer-accent);padding:8px;overflow:auto">'
         + m.replace(/```/g, '') + '</pre>')
@@ -487,8 +492,24 @@ _BODY = r"""
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/(^|[^*])\*([^*\n]+?)\*/g, '$1<em>$2</em>')
       .replace(/`([^`]+?)`/g, '<code style="background:var(--cds-layer-accent);padding:1px 5px">$1</code>')
-      .replace(/^\s*[-*]\s+(.+)$/gm, '&nbsp;&nbsp;• $1')
+      .replace(/^\s*[-*]\s+(.+)$/gm, '&nbsp;&nbsp;• $1'))
       .replace(/\n/g, '<br>');
+  }
+
+  // Markdown tables: a header row, a |---| delimiter row, then body rows.
+  // Runs on text mdToHtml has already escaped, so cell contents stay inert.
+  // Fenced code blocks (<pre>) are left alone, and each table is emitted on
+  // one line so the newline-to-<br> pass does not break it up.
+  function mdTables(html) {
+    const splitRow = row => row.trim().replace(/^\|/, '').replace(/\|$/, '')
+      .split('|').map(cell => cell.trim());
+    return html.split(/(<pre[\s\S]*?<\/pre>)/).map((part, i) => i % 2 ? part :
+      part.replace(/^[ \t]*\|.*\|[ \t]*\n[ \t]*\|[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|[ \t]*(?:\n[ \t]*\|.*\|[ \t]*)*$\n?/gm, block => {
+        const [head, , ...body] = block.replace(/\n$/, '').split('\n');
+        const th = splitRow(head).map(c => '<th>' + c + '</th>').join('');
+        const trs = body.map(r => '<tr>' + splitRow(r).map(c => '<td>' + c + '</td>').join('') + '</tr>').join('');
+        return '<table class="md-table"><thead><tr>' + th + '</tr></thead><tbody>' + trs + '</tbody></table>';
+      })).join('');
   }
 
   async function sendMessage() {
