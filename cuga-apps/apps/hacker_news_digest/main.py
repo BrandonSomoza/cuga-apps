@@ -5,7 +5,7 @@ A FastAPI server that uses CugaAgent to fetch Hacker News stories and produce
 a concise, developer-focused digest.
 
 Usage:
-  python main.py [--port 28839] [--provider anthropic] [--model claude-sonnet-4-6]
+  python main.py [--port 28841] [--provider anthropic] [--model claude-sonnet-4-6]
 
 Required env vars:
   LLM_PROVIDER          — LLM backend: anthropic | openai | rits | watsonx | litellm | ollama
@@ -191,7 +191,7 @@ def _web(port: int):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Hacker News Digest — CUGA demo app")
-    parser.add_argument("--port", type=int, default=28839)
+    parser.add_argument("--port", type=int, default=28841)
     parser.add_argument(
         "--provider", "-p", default=None,
         choices=["rits", "watsonx", "openai", "anthropic", "litellm", "ollama"],

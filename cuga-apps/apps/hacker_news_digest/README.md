@@ -8,11 +8,11 @@ summarize a story in four bullets.
 
 ```bash
 pip install -r requirements.txt
-python main.py --port 28839
+python main.py --port 28841
 ```
 
 Configure `LLM_PROVIDER`, `LLM_MODEL`, and `AGENT_SETTING_CONFIG` as for other
-Cuga apps. Open <http://127.0.0.1:28839>.
+Cuga apps. Open <http://127.0.0.1:28841>.
 
 ## Example prompts
 
